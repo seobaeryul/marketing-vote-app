@@ -1,8 +1,9 @@
 /**
  * 서브 사이트 - 이미지 페이지 (QR 링크 첫 화면)
- * 첨부된 치킨 마케팅 이미지 표시
  */
 import { useLocation } from "wouter";
+// 🌟 이미지를 직접 import 해서 경로 문제를 원천 봉쇄합니다.
+import mainImage from "../../main.jpg"; 
 
 export default function SurveyImage() {
   const [, setLocation] = useLocation();
@@ -11,7 +12,7 @@ export default function SurveyImage() {
     <div className="min-h-screen bg-black flex flex-col">
       <div className="flex-1 flex items-center justify-center p-4">
         <img
-          src="/chicken-marketing_0ae9d29b.jpg"
+          src={mainImage}
           alt="마케팅 전략 예시"
           className="w-full max-w-sm rounded-xl shadow-2xl object-contain"
           style={{ maxHeight: "80vh" }}
