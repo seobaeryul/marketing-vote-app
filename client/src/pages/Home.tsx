@@ -4,34 +4,49 @@
  */
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { STRATEGIES, TOTAL_VOTES, getVoteData, addVote, startPolling, initStorageListener } from "@/lib/voteStore";
+import { STRATEGIES, TOTAL_VOTES } from "@/lib/voteStore"; // 안 쓰는 옛날 함수들은 지웠어!
 import { toast } from "sonner";
+import { createClient } from "@supabase/supabase-js";
+
+// 🌟 Supabase 클라이언트 연결 추가
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Home() {
   const [, setLocation] = useLocation();
   const [selected, setSelected] = useState<string | null>(null);
-  const [voteData, setVoteData] = useState(getVoteData());
+  
+  // 🌟 Supabase에서 가져올 숫자 저장소
+  const [voteData, setVoteData] = useState({
+    totalVotes: 0
+  });
+
+  // 🌟 Supabase에서 진짜 투표 데이터 개수 가져오기
+  const loadVotes = async () => {
+    try {
+      const { data, error } = await supabase.from("votes").select("option");
+      if (error) throw error;
+      
+      setVoteData({
+        totalVotes: data ? data.length : 0 // 전체 줄 수를 세서 투표자 수로 적용!
+      });
+    } catch (err: any) {
+      console.error("투표 불러오기 실패:", err.message);
+    }
+  };
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      setVoteData((e as CustomEvent).detail);
-    };
-    window.addEventListener("voteUpdated", handler);
-    setVoteData(getVoteData());
+    loadVotes(); // 처음 켰을 때 한 번 불러오고
     
-    // 다른 탭/창에서의 변경 감지
-    initStorageListener();
+    // 🌟 1초마다 Supabase 새로고침 (큐얼이랑 실시간 동기화)
+    const interval = setInterval(loadVotes, 1000);
     
-    // 폰과 컴퓨터 간 동기화 (1초마다 확인)
-    const stopPolling = startPolling(1000);
-    
-    return () => {
-      window.removeEventListener("voteUpdated", handler);
-      stopPolling();
-    };
+    return () => clearInterval(interval);
   }, []);
 
-  const handleVote = () => {
+  // 🌟 투표하기 버튼 눌렀을 때 Supabase에 바로 저장하기
+  const handleVote = async () => {
     if (!selected) {
       toast.error("마케팅 전략을 선택해주세요.");
       return;
@@ -40,8 +55,17 @@ export default function Home() {
       toast.error("투표가 마감되었습니다.");
       return;
     }
-    addVote(selected);
-    setLocation("/thanks");
+
+    try {
+      // 데이터베이스에 유저가 선택한 option 저장
+      const { error } = await supabase.from("votes").insert([{ option: selected }]);
+      if (error) throw error;
+  
+      await loadVotes(); // 저장 성공하면 숫자 한 번 더 갱신
+      setLocation("/thanks");
+    } catch (err: any) {
+      toast.error(`투표 실패: ${err.message}`);
+    }
   };
 
   const progressPercent = Math.min((voteData.totalVotes / TOTAL_VOTES) * 100, 100);
