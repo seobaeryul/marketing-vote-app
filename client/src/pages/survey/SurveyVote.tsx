@@ -1,11 +1,17 @@
 /**
  * 서브 사이트 - 투표 페이지 (QR 링크 두 번째 화면)
- * 메인 홈과 동일한 투표 UI
+ * 메인 홈과 동일한 투표 UI - Supabase 직접 연결 버전
  */
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { STRATEGIES, TOTAL_VOTES } from "@/lib/voteStore";
 import { toast } from "sonner";
+import { createClient } from "@supabase/supabase-js";
+
+// Supabase 클라이언트 생성
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function SurveyVote() {
   const [, setLocation] = useLocation();
@@ -14,14 +20,20 @@ export default function SurveyVote() {
     total: 0
   });
 
+  // [수정] 백엔드 API 대신 Supabase에서 직접 투표 데이터 개수 가져오기
   const loadVotes = async () => {
-    const res = await fetch("/api/votes");
-    const data = await res.json();
-  
-    setVoteData({
-      total: data.votes
-    });
+    try {
+      const { data, error } = await supabase.from("votes").select("option");
+      if (error) throw error;
+      
+      setVoteData({
+        total: data ? data.length : 0
+      });
+    } catch (err: any) {
+      console.error("투표 불러오기 실패:", err.message);
+    }
   };
+
   useEffect(() => {
     loadVotes();
   
@@ -30,6 +42,7 @@ export default function SurveyVote() {
     return () => clearInterval(interval);
   }, []);
 
+  // [수정] 백엔드 API 대신 Supabase에 직접 선택한 옵션 저장하기
   const handleVote = async () => {
     if (!selected) {
       toast.error("마케팅 전략을 선택해주세요.");
@@ -41,13 +54,16 @@ export default function SurveyVote() {
       return;
     }
   
-    await fetch("/api/vote", {
-      method: "POST",
-    });
+    try {
+      // 데이터베이스에 유저가 선택한 option 저장
+      const { error } = await supabase.from("votes").insert([{ option: selected }]);
+      if (error) throw error;
   
-    loadVotes();
-  
-    setLocation("/survey/thanks");
+      await loadVotes();
+      setLocation("/survey/thanks");
+    } catch (err: any) {
+      toast.error(`투표 실패: ${err.message}`);
+    }
   };
 
   const progressPercent = Math.min((voteData.total / TOTAL_VOTES) * 100, 100);
