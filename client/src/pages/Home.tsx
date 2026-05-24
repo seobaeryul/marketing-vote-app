@@ -39,8 +39,8 @@ export default function Home() {
   useEffect(() => {
     loadVotes(); // 처음 켰을 때 한 번 불러오고
     
-    // 🌟 1초마다 Supabase 새로고침 (큐얼이랑 실시간 동기화)
-    const interval = setInterval(loadVotes, 1000);
+    // 🌟 3초마다 Supabase 새로고침 (큐얼이랑 실시간 동기화)
+    const interval = setInterval(loadVotes, 3000);
     
     return () => clearInterval(interval);
   }, []);
