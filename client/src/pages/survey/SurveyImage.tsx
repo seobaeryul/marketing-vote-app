@@ -11,7 +11,7 @@ export default function SurveyImage() {
     <div className="min-h-screen bg-black flex flex-col">
       <div className="flex-1 flex items-center justify-center p-4">
         <img
-          src="/manus-storage/chicken-marketing_0ae9d29b.jpg"
+          src="/chicken-marketing_0ae9d29b.jpg"
           alt="마케팅 전략 예시"
           className="w-full max-w-sm rounded-xl shadow-2xl object-contain"
           style={{ maxHeight: "80vh" }}
