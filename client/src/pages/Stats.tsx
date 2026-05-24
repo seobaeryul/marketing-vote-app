@@ -1,22 +1,32 @@
 /**
  * 통계 페이지 - 투표 결과 시각화
- * 원그래프(총 투표 진행률) + 원그래프(전략별 비율) + 막대그래프 + 초기화 버튼
+ * ✅ Supabase에서 직접 읽기 + DELETE로 초기화
  */
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { STRATEGIES, TOTAL_VOTES, getVoteData, VoteData, startPolling, initStorageListener } from "@/lib/voteStore";
+import { STRATEGIES, TOTAL_VOTES } from "@/lib/voteStore";
 import { BottomNav } from "./Home";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { createClient } from "@supabase/supabase-js";
+
+// Supabase 클라이언트
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+interface VoteData {
+  totalVotes: number;
+  votes: Record<string, number>;
+}
 
 const RADIAN = Math.PI / 180;
 
-// 커스텀 라벨 (원그래프 안)
 const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (percent < 0.05) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -31,44 +41,55 @@ const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent
 
 export default function Stats() {
   const [, setLocation] = useLocation();
-  const [voteData, setVoteData] = useState<VoteData>(getVoteData());
+  const [voteData, setVoteData] = useState<VoteData>({
+    totalVotes: 0,
+    votes: { info: 0, scarcity: 0, price: 0, influencer: 0 },
+  });
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetConfirmed, setResetConfirmed] = useState(false);
 
+  // ✅ Supabase에서 투표 데이터 불러오기
+  const loadVotes = async () => {
+    try {
+      const { data, error } = await supabase.from("votes").select("option");
+      if (error) throw error;
+
+      const counts: Record<string, number> = { info: 0, scarcity: 0, price: 0, influencer: 0 };
+      (data || []).forEach((row: { option: string }) => {
+        if (counts[row.option] !== undefined) {
+          counts[row.option]++;
+        }
+      });
+
+      setVoteData({
+        totalVotes: data ? data.length : 0,
+        votes: counts,
+      });
+    } catch (err: any) {
+      console.error("통계 불러오기 실패:", err.message);
+    }
+  };
+
   useEffect(() => {
-    const handler = (e: Event) => setVoteData((e as CustomEvent).detail);
-    window.addEventListener("voteUpdated", handler);
-    setVoteData(getVoteData());
-    
-    // 다른 탭/창에서의 변경 감지
-    initStorageListener();
-    
-    // 폰과 컴퓨터 간 동기화 (1초마다 확인)
-    const stopPolling = startPolling(1000);
-    
-    return () => {
-      window.removeEventListener("voteUpdated", handler);
-      stopPolling();
-    };
+    loadVotes();
+    const interval = setInterval(loadVotes, 3000); // 3초마다 자동 갱신
+    return () => clearInterval(interval);
   }, []);
 
   const progressPercent = Math.min((voteData.totalVotes / TOTAL_VOTES) * 100, 100);
   const remaining = TOTAL_VOTES - voteData.totalVotes;
 
-  // 총 투표 진행 원그래프 데이터
   const totalPieData = [
     { name: "투표 완료", value: voteData.totalVotes },
     { name: "잔여", value: remaining > 0 ? remaining : 0 },
   ];
 
-  // 전략별 원그래프 데이터
   const strategyPieData = STRATEGIES.map((s) => ({
     name: s.name,
     value: voteData.votes[s.id] || 0,
     color: s.color,
   }));
 
-  // 막대그래프 데이터
   const barData = STRATEGIES.map((s) => ({
     name: s.name.replace(" 마케팅", ""),
     votes: voteData.votes[s.id] || 0,
@@ -80,21 +101,27 @@ export default function Stats() {
     setResetConfirmed(false);
   };
 
-  const handleConfirmReset = () => {
+  // ✅ Supabase에서 전체 DELETE로 초기화
+  const handleConfirmReset = async () => {
     if (!resetConfirmed) {
       toast.error("체크박스를 선택해주세요.");
       return;
     }
-    const emptyData: VoteData = {
-      totalVotes: 0,
-      votes: { info: 0, scarcity: 0, price: 0, influencer: 0 },
-    };
-    localStorage.setItem("marketing_vote_data", JSON.stringify(emptyData));
-    window.dispatchEvent(new CustomEvent("voteUpdated", { detail: emptyData }));
-    setVoteData(emptyData);
-    setShowResetDialog(false);
-    setResetConfirmed(false);
-    toast.success("투표 데이터가 초기화되었습니다.");
+    try {
+      // votes 테이블 전체 삭제 (id > 0 조건으로 전체 행 DELETE)
+      const { error } = await supabase.from("votes").delete().gte("id", 0);
+      if (error) throw error;
+
+      setVoteData({
+        totalVotes: 0,
+        votes: { info: 0, scarcity: 0, price: 0, influencer: 0 },
+      });
+      setShowResetDialog(false);
+      setResetConfirmed(false);
+      toast.success("투표 데이터가 초기화되었습니다.");
+    } catch (err: any) {
+      toast.error(`초기화 실패: ${err.message}`);
+    }
   };
 
   return (
@@ -215,7 +242,6 @@ export default function Stats() {
                   <Tooltip formatter={(v: number) => [`${v}명`, ""]} />
                 </PieChart>
               </ResponsiveContainer>
-              {/* 범례 */}
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {STRATEGIES.map((s) => (
                   <div key={s.id} className="flex items-center gap-2 text-xs">
@@ -259,7 +285,6 @@ export default function Stats() {
               </BarChart>
             </ResponsiveContainer>
           )}
-          {/* 색상 범례 */}
           <div className="grid grid-cols-2 gap-2 mt-3">
             {STRATEGIES.map((s) => (
               <div key={s.id} className="flex items-center gap-2 text-xs">
